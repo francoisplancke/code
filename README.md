@@ -39,3 +39,10 @@ Commandes disponibles dans le mode interactif :
     similaires [num_article] : Trouve les articles juridiquement proches d'un article spécifique (ex: similaires L1132-1).
     full : Alterne entre l'affichage d'un résumé ou du contenu complet des articles.
     quit : Quitter l'application.
+
+Installation:
+    Installation des librairies
+    pip install sentence-transformers faiss-cpu numpy
+
+    Ajout du modèle au niveau du répertoire supérieur
+    git clone https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
