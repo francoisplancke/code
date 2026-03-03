@@ -43,6 +43,7 @@ Commandes disponibles dans le mode interactif :
 Installation:
     Installation des librairies
     pip install sentence-transformers faiss-cpu numpy
+    pip install flask
 
     Ajout du modèle au niveau du répertoire supérieur
     git clone https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2

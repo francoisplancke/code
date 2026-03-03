@@ -37,9 +37,18 @@ class CodeDuTravailSearch:
         print(f"   → Métadonnées...")
         with open(self.vectorized_dir / "articles_metadata.json", 'r', encoding='utf-8') as f:
             self.articles = json.load(f)
-        
+
+        with open(self.vectorized_dir / "articles_metadata.json", 'r', encoding='utf-8') as f:
+            self.articles = json.load(f)
+
+        # Ajout pour accès direct ultra-rapide
+        self.articles_by_id = {art['id']: art for art in self.articles}
         print(f"✅ Système prêt : {len(self.articles)} articles indexés\n")
-    
+
+    def get_article_by_id(self, article_id):
+        return self.articles_by_id.get(article_id)            
+
+
     def search(self, query: str, k: int = 10, min_score: float = 0.3):
         """
         Recherche sémantique
