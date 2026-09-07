@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Article {{ article.num }} - JurisNLP</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .breadcrumb-item + .breadcrumb-item::before { content: ">"; }
+        .legal-content { font-size: 1.2rem; line-height: 1.6; background: white; padding: 30px; border-radius: 8px; border: 1px solid #dee2e6; }
+        .sticky-top { top: 20px; }
+    </style>
+</head>
+<body class="bg-light">
+<div class="container py-5">
+    <a href="/" class="btn btn-outline-secondary mb-4">← Retour à la recherche</a>
+
+    <!-- div class="alert alert-info">
+    Clés disponibles dans cet article : {{ article.keys() | list }}
+    </div -->
+    
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            {% for niveau in article.chemin_hierarchique %}
+            <li class="breadcrumb-item small text-muted">{{ niveau }}</li>
+            {% endfor %}
+        </ol>
+    </nav>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <h1 class="display-5 text-primary mb-4">Article {{ article.num }}</h1>
+            <div class="legal-content shadow-sm">
+                <p style="white-space: pre-wrap;">{{ article.contenu }}</p>
+            </div>
+            <div class="mt-4 text-muted small">
+                ID Légifrance: {{ article.id }} | État : {{ article.etat }}
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="sticky-top">
+                <h4 class="mb-3">Articles proches</h4>
+                <div class="list-group shadow-sm">
+                    {% for rel in related %}
+                    <a href="/article/{{ rel.id }}" class="list-group-item list-group-item-action">
+                        <h6 class="mb-1">Article {{ rel.num }}</h6>
+                        <p class="mb-1 small text-muted">{{ rel.article.contenu[:100] }}...</p>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

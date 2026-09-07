@@ -368,7 +368,8 @@ def run_validation_tests(searcher):
 
 if __name__ == "__main__":
     # Configuration
-    MODEL_PATH = "../paraphrase-multilingual-MiniLM-L12-v2"  # Ajustez selon votre config
+    # MODEL_PATH = "../paraphrase-multilingual-MiniLM-L12-v2"  
+    MODEL_PATH = "../OrdalieTech/Solon-embeddings-base-0.1"
     VECTORIZED_DIR = "./code_travail_vectorized"
     
     # Initialiser le système
