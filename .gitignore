@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environnement virtuel
+.venv/
+venv/
+
+# Windows / WSL
+*Zone.Identifier*
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Corpus DILA / LEGI
+*.tar.gz
+*.tgz
+Freemium_legi_*
+LEGI_*.tar.gz
+
+# Anciens corpus / artefacts locaux
+Code_du_travail.xml
+code_travail/
+code_travail_vectorized/
+
+# Anciens index / embeddings locaux
+*.npy
+*.npz
+*.faiss
+*.index
+
+# Logs
+*.log
+
+# Variables d'environnement / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+*~

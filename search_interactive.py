@@ -1,397 +1,617 @@
 """
-Interface de recherche interactive pour le Code du travail
-Permet de tester et valider la qualité du système
+Recherche interactive dans le corpus LEGI stocke dans PostgreSQL + pgvector.
+
+Prerequis:
+    pip install "psycopg[binary]" pgvector sentence-transformers numpy
+
+Exemple:
+    python3 search_interactive.py \
+      --dsn "postgresql://postgres:postgres@localhost:5432/legal" \
+      --model "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" \
+      --device cuda
 """
 
-from sentence_transformers import SentenceTransformer
-import faiss
+from __future__ import annotations
+
+import argparse
+import ast
 import json
-from pathlib import Path
-import numpy as np
+from collections import Counter
+from typing import Dict, List, Optional
+
+try:
+    import numpy as np
+    import psycopg
+    from pgvector.psycopg import register_vector
+    from sentence_transformers import SentenceTransformer
+except ImportError as exc:
+    raise SystemExit(
+        'Module manquant. Installez avec: pip install "psycopg[binary]" '
+        'pgvector sentence-transformers numpy'
+    ) from exc
 
 
-class CodeDuTravailSearch:
-    """Système de recherche dans le Code du travail"""
-    
-    def __init__(self, model_path: str, vectorized_dir: str = "./code_travail_vectorized"):
-        """
-        Initialise le système de recherche
-        
-        Args:
-            model_path: Chemin vers le modèle (local ou nom HuggingFace)
-            vectorized_dir: Dossier contenant l'index et métadonnées
-        """
-        self.vectorized_dir = Path(vectorized_dir)
-        
+DEFAULT_DSN = "postgresql://postgres:postgres@localhost:5432/legal"
+DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+
+def _format_chemin_hierarchique(value) -> str:
+    """Retourne un chemin lisible depuis unite.chemin (JSONB LEGI)."""
+    if not value:
+        return ""
+
+    data = value
+
+    # Cas texte JSON / représentation Python.
+    if isinstance(data, str):
+        stripped = data.strip()
+        if not stripped:
+            return ""
+        try:
+            data = json.loads(stripped)
+        except Exception:
+            try:
+                data = ast.literal_eval(stripped)
+            except Exception:
+                return stripped
+
+    if isinstance(data, dict):
+        data = [data]
+
+    titles = []
+
+    if isinstance(data, list):
+        for item in data:
+            current = item
+
+            # Certaines anciennes/importations stockent chaque élément
+            # de la liste comme chaîne représentant un dictionnaire.
+            if isinstance(current, str):
+                s = current.strip()
+                if not s:
+                    continue
+                try:
+                    current = json.loads(s)
+                except Exception:
+                    try:
+                        current = ast.literal_eval(s)
+                    except Exception:
+                        current = s
+
+            if isinstance(current, dict):
+                title = (
+                    current.get("titre")
+                    or current.get("title")
+                    or current.get("libelle")
+                    or ""
+                )
+                title = str(title).strip()
+                if title:
+                    titles.append(title)
+            elif current:
+                s = str(current).strip()
+                if s:
+                    titles.append(s)
+
+    elif data:
+        titles.append(str(data).strip())
+
+    # Dédupliquer les titres consécutifs éventuels.
+    cleaned = []
+    for title in titles:
+        if title and (not cleaned or cleaned[-1] != title):
+            cleaned.append(title)
+
+    return " > ".join(cleaned)
+
+
+def _lexical_query(query: str) -> str:
+    """Normalise legerement la requete pour le classement lexical."""
+    return " ".join((query or "").split()).strip()
+
+
+class LegiSearch:
+    """Moteur de recherche semantique PostgreSQL + pgvector."""
+
+    def __init__(
+        self,
+        model_path: str = DEFAULT_MODEL,
+        dsn: str = DEFAULT_DSN,
+        device: Optional[str] = None,
+        etat: str = "VIGUEUR",
+    ):
+        self.dsn = dsn
+        self.model_name = model_path
+        self.etat = etat
+
         print("🔧 Chargement du système de recherche...")
-        
-        # Charger le modèle
-        print(f"   → Modèle : {model_path}")
-        self.model = SentenceTransformer(model_path)
-        
-        # Charger l'index FAISS
-        print(f"   → Index FAISS...")
-        self.index = faiss.read_index(str(self.vectorized_dir / "faiss_index.bin"))
-        
-        # Charger les métadonnées
-        print(f"   → Métadonnées...")
-        with open(self.vectorized_dir / "articles_metadata.json", 'r', encoding='utf-8') as f:
-            self.articles = json.load(f)
+        print(f"   → PostgreSQL : {self._safe_dsn(dsn)}")
+        print(f"   → Modèle     : {model_path}")
+        if device:
+            print(f"   → Device     : {device}")
 
-        with open(self.vectorized_dir / "articles_metadata.json", 'r', encoding='utf-8') as f:
-            self.articles = json.load(f)
+        self.model = SentenceTransformer(model_path, device=device) if device else SentenceTransformer(model_path)
+        self.dimension = int(self.model.get_embedding_dimension())
 
-        # Ajout pour accès direct ultra-rapide
-        self.articles_by_id = {art['id']: art for art in self.articles}
-        print(f"✅ Système prêt : {len(self.articles)} articles indexés\n")
+        self.conn = psycopg.connect(dsn)
+        register_vector(self.conn)
 
-    def get_article_by_id(self, article_id):
-        return self.articles_by_id.get(article_id)            
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, dimension, normalize
+                FROM embedding_model
+                WHERE name = %s
+                """,
+                (model_path,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise RuntimeError(
+                    f"Modèle '{model_path}' absent de embedding_model. "
+                    "Vectorisez d'abord la base avec ce modèle."
+                )
+            self.model_id = int(row[0])
+            db_dimension = int(row[1])
+            self.normalize = bool(row[2])
 
+            if db_dimension != self.dimension:
+                raise RuntimeError(
+                    f"Dimension incompatible: modèle={self.dimension}, base={db_dimension}."
+                )
 
-    def search(self, query: str, k: int = 10, min_score: float = 0.3):
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM version_embedding ve
+                JOIN version v ON v.id = ve.version_id
+                WHERE ve.model_id = %s AND v.etat = %s
+                """,
+                (self.model_id, self.etat),
+            )
+            count = int(cur.fetchone()[0])
+
+        print(f"✅ Système prêt : {count:,} versions {self.etat} vectorisées\n".replace(',', ' '))
+
+    @staticmethod
+    def _safe_dsn(dsn: str) -> str:
+        # Evite d'afficher le mot de passe dans les logs.
+        if "://" not in dsn or "@" not in dsn:
+            return dsn
+        prefix, rest = dsn.split("://", 1)
+        credentials, host = rest.rsplit("@", 1)
+        if ":" in credentials:
+            user = credentials.split(":", 1)[0]
+            return f"{prefix}://{user}:***@{host}"
+        return dsn
+
+    def close(self):
+        if getattr(self, "conn", None) is not None:
+            self.conn.close()
+            self.conn = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+    def _encode(self, text: str):
+        return self.model.encode(
+            text,
+            convert_to_numpy=True,
+            normalize_embeddings=self.normalize,
+        ).astype(np.float32)
+
+    @staticmethod
+    def _row_to_article(row: Dict) -> Dict:
+        chemin = row.get("chemin") or []
+        if isinstance(chemin, str):
+            try:
+                chemin = json.loads(chemin)
+            except Exception:
+                chemin = [chemin]
+
+        metadata = {
+            "texte_cid": row.get("texte_source_id") or "",
+            "texte_titre": row.get("titre") or "",
+            "nature": row.get("type_texte") or "",
+            "type_article": row.get("type_unite") or "ARTICLE",
+            "date_debut": str(row.get("date_debut") or ""),
+            "date_fin": str(row.get("date_fin") or ""),
+            "source_xml": row.get("source_path") or "",
+        }
+
+        return {
+            # Compatibilite avec l'ancienne interface / Flask.
+            "id": row.get("version_source_id"),
+            "version_id": str(row.get("version_id")),
+            "unite_id": str(row.get("unite_id")),
+            "num": row.get("numero") or "",
+            "contenu": row.get("contenu") or "",
+            "etat": row.get("etat") or "",
+            "date_modification": str(row.get("date_debut") or ""),
+            "date_fin": str(row.get("date_fin") or ""),
+            "titre_modification": None,
+            "chemin_hierarchique": chemin,
+            "niveau_profondeur": len(chemin),
+            "references": [],
+            "metadata": metadata,
+        }
+
+    def search(
+        self,
+        query: str,
+        k: int = 10,
+        min_score: float = 0.0,
+        texte_source_id: str | None = None,
+        type_texte: str | None = None,
+        hybrid: bool = True,
+        lexical_weight: float = 0.25,
+        candidate_multiplier: int = 8,
+    ):
         """
-        Recherche sémantique
-        
-        Args:
-            query: Question ou texte à rechercher
-            k: Nombre de résultats
-            min_score: Score minimum de pertinence (0-1)
-        
-        Returns:
-            Liste de résultats avec articles et scores
+        Recherche semantique dans les versions VIGUEUR.
+
+        En mode hybride, on combine :
+          - similarite cosinus pgvector ;
+          - pertinence lexicale PostgreSQL via websearch_to_tsquery / ts_rank_cd.
+
+        lexical_weight=0.25 signifie 75 % vectoriel / 25 % lexical.
         """
-        # Vectoriser la requête
-        query_embedding = self.model.encode([query], convert_to_numpy=True, normalize_embeddings=True)
-        
-        # Rechercher
-        distances, indices = self.index.search(query_embedding, k)
-        
-        # Filtrer et formater les résultats
+        query = (query or "").strip()
+        if not query:
+            return []
+
+        lexical_weight = max(0.0, min(float(lexical_weight), 1.0))
+        vector_weight = 1.0 - lexical_weight
+
+        query_embedding = self.model.encode(
+            [query],
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )[0]
+
+        filters = ["ve.model_id = %s", "v.etat = %s"]
+        filter_params = [self.model_id, self.etat]
+
+        if texte_source_id:
+            filters.append("t.source_id = %s")
+            filter_params.append(texte_source_id)
+        if type_texte:
+            filters.append("t.type = %s")
+            filter_params.append(type_texte.upper())
+
+        where_sql = " AND ".join(filters)
+        distance_expr = (
+            f"ve.embedding::vector({self.dimension}) "
+            f"<=> %s::vector({self.dimension})"
+        )
+
+        # On recupere davantage de candidats HNSW puis on les rerange lexicalement.
+        candidate_k = max(k, k * max(1, int(candidate_multiplier))) if hybrid else k
+
+        if hybrid:
+            lex_query = _lexical_query(query)
+            # "simple" conserve les formes juridiques/francaises sans stemming agressif.
+            lexical_expr = """
+                ts_rank_cd(
+                    to_tsvector(
+                        'simple',
+                        concat_ws(
+                            ' ',
+                            coalesce(t.titre, ''),
+                            coalesce(u.numero, ''),
+                            coalesce(v.contenu, '')
+                        )
+                    ),
+                    websearch_to_tsquery('simple', %s)
+                )
+            """
+            sql = f"""
+                WITH candidates AS (
+                    SELECT
+                        v.id AS version_id,
+                        v.source_id AS version_source_id,
+                        v.etat,
+                        v.date_debut,
+                        v.date_fin,
+                        v.contenu,
+                        u.chemin,
+                        u.id AS unite_id,
+                        u.source_id AS unite_source_id,
+                        u.numero,
+                        t.id AS texte_id,
+                        t.source_id AS texte_source_id,
+                        t.titre,
+                        t.type AS type_texte,
+                        ({distance_expr}) AS distance
+                    FROM version_embedding ve
+                    JOIN version v ON v.id = ve.version_id
+                    JOIN unite u ON u.id = v.unite_id
+                    JOIN texte t ON t.id = u.texte_id
+                    WHERE {where_sql}
+                    ORDER BY {distance_expr}
+                    LIMIT %s
+                )
+                SELECT
+                    c.*,
+                    (1.0 - c.distance) AS vector_score,
+                    ({lexical_expr}) AS lexical_score
+                FROM candidates c
+                JOIN texte t ON t.id = c.texte_id
+                JOIN unite u ON u.id = c.unite_id
+                JOIN version v ON v.id = c.version_id
+            """
+            params = [
+                query_embedding,
+                *filter_params,
+                query_embedding,
+                candidate_k,
+                lex_query,
+            ]
+        else:
+            sql = f"""
+                SELECT
+                    v.id AS version_id,
+                    v.source_id AS version_source_id,
+                    v.etat,
+                    v.date_debut,
+                    v.date_fin,
+                    v.contenu,
+                    u.chemin,
+                    u.id AS unite_id,
+                    u.source_id AS unite_source_id,
+                    u.numero,
+                    t.id AS texte_id,
+                    t.source_id AS texte_source_id,
+                    t.titre,
+                    t.type AS type_texte,
+                    ({distance_expr}) AS distance,
+                    (1.0 - ({distance_expr})) AS vector_score,
+                    0.0::double precision AS lexical_score
+                FROM version_embedding ve
+                JOIN version v ON v.id = ve.version_id
+                JOIN unite u ON u.id = v.unite_id
+                JOIN texte t ON t.id = u.texte_id
+                WHERE {where_sql}
+                ORDER BY {distance_expr}
+                LIMIT %s
+            """
+            params = [
+                query_embedding,
+                query_embedding,
+                query_embedding,
+                *filter_params,
+                k,
+            ]
+
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            cols = [d.name for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+        if hybrid and rows:
+            # ts_rank_cd n'est pas borne a 1. Normalisation locale robuste sur les candidats.
+            max_lex = max(float(r.get("lexical_score") or 0.0) for r in rows)
+            for r in rows:
+                vector_score = float(r.get("vector_score") or 0.0)
+                raw_lex = float(r.get("lexical_score") or 0.0)
+                lexical_score = (raw_lex / max_lex) if max_lex > 0 else 0.0
+                r["lexical_score_normalized"] = lexical_score
+                r["score"] = vector_weight * vector_score + lexical_weight * lexical_score
+
+            rows.sort(key=lambda r: r["score"], reverse=True)
+            rows = rows[:k]
+        else:
+            for r in rows:
+                r["score"] = float(r.get("vector_score") or 0.0)
+
         results = []
-        for idx, score in zip(indices[0], distances[0]):
-            if score >= min_score:
-                article = self.articles[idx]
-                results.append({
-                    'article': article,
-                    'score': float(score),
-                    'num': article['num'],
-                    'id': article['id']
-                })
-        
+        for row in rows:
+            score = float(row["score"])
+            if score < min_score:
+                continue
+
+            article = {
+                "id": row["version_source_id"],
+                "version_id": row["version_id"],
+                "unite_id": row["unite_id"],
+                "unite_source_id": row["unite_source_id"],
+                "num": row["numero"] or "",
+                "contenu": row["contenu"] or "",
+                "etat": row["etat"] or "",
+                "date_modification": str(row["date_debut"] or ""),
+                "date_debut": str(row["date_debut"] or ""),
+                "date_fin": str(row["date_fin"] or ""),
+                "chemin_hierarchique": row["chemin"],
+                "chemin_affichage": _format_chemin_hierarchique(row["chemin"]),
+                "references": [],
+                "metadata": {
+                    "texte_cid": row["texte_source_id"] or "",
+                    "texte_titre": row["titre"] or "",
+                    "nature": row["type_texte"] or "",
+                    "type_texte": row["type_texte"] or "",
+                },
+            }
+
+            results.append({
+                "article": article,
+                "score": score,
+                "vector_score": float(row.get("vector_score") or 0.0),
+                "lexical_score": float(
+                    row.get("lexical_score_normalized")
+                    if hybrid
+                    else 0.0
+                ),
+                "num": article["num"],
+                "id": article["id"],
+            })
+
         return results
-    
+
     def display_results(self, results, show_full_content: bool = False):
-        """Affiche les résultats de recherche de manière formatée"""
-        
         if not results:
             print("❌ Aucun résultat trouvé")
             return
-        
-        print(f"\n{'='*70}")
+
+        print(f"\n{'=' * 80}")
         print(f"📊 {len(results)} résultat(s) trouvé(s)")
-        print('='*70)
-        
+        print("=" * 80)
+
         for i, result in enumerate(results, 1):
-            article = result['article']
-            score = result['score']
-            
-            print(f"\n{i}. 📌 Article {article['num']} (score: {score:.3f})")
-            print(f"   ID: {article['id']}")
-            
-            # Chemin hiérarchique
-            if article['chemin_hierarchique']:
-                chemin = ' > '.join(article['chemin_hierarchique'])
-                # Limiter la longueur pour l'affichage
-                if len(chemin) > 100:
-                    chemin = '...' + chemin[-97:]
-                print(f"   📂 {chemin}")
-            
-            # État et date
-            print(f"   ⚖️  État: {article['etat']} | Date: {article['date_modification']}")
-            
-            # Contenu
+            article = result["article"]
+            meta = article["metadata"]
+            score = result["score"]
+            titre = meta.get("texte_titre") or "Texte sans titre"
+            nature = meta.get("nature") or ""
+
+            print(f"\n{i}. 📌 {titre} — Article {article['num']} (score: {score:.3f})")
+            print(f"   ⚖️  {nature} | État: {article['etat']} | Début: {article['date_modification']}")
+            print(f"   🔑 Version: {article['id']} | Texte: {meta.get('texte_cid', '')}")
+
+            chemin = article.get("chemin_hierarchique") or []
+            if chemin:
+                chemin_txt = " > ".join(str(x) for x in chemin)
+                if len(chemin_txt) > 150:
+                    chemin_txt = "..." + chemin_txt[-147:]
+                print(f"   📂 {chemin_txt}")
+
             if show_full_content:
-                print(f"\n   📝 Contenu complet :")
-                print("   " + "─"*66)
-                for line in article['contenu'].split('\n'):
-                    print(f"   {line}")
-                print("   " + "─"*66)
+                print("\n   📝 Contenu complet :")
+                print("   " + "─" * 76)
+                for line in article["contenu"].splitlines():
+                    print("   " + line)
+                print("   " + "─" * 76)
             else:
-                contenu_preview = article['contenu'][:300].replace('\n', ' ')
-                print(f"   📝 {contenu_preview}...")
-            
-            # Références
-            if article['references']:
-                print(f"   🔗 {len(article['references'])} référence(s) vers d'autres articles")
-    
-    def find_related_articles(self, article_num: str, k: int = 5):
-        """
-        Trouve les articles similaires à un article donné
-        
-        Args:
-            article_num: Numéro de l'article (ex: "L1132-1")
-            k: Nombre d'articles similaires à retourner
-        """
-        # Trouver l'article
-        article = None
-        article_idx = None
-        for idx, art in enumerate(self.articles):
-            if art['num'] == article_num:
-                article = art
-                article_idx = idx
-                break
-        
-        if article is None:
-            print(f"❌ Article {article_num} introuvable")
-            return []
-        
-        # Rechercher avec le contenu de l'article comme requête
-        query = f"{article['num']} {article['contenu'][:500]}"
-        results = self.search(query, k=k+1)  # +1 car l'article lui-même sera dans les résultats
-        
-        # Exclure l'article lui-même
-        results = [r for r in results if r['num'] != article_num][:k]
-        
-        return results
-    
-    def analyze_topic(self, topic: str, k: int = 20):
-        """
-        Analyse approfondie d'un sujet
-        
-        Args:
-            topic: Sujet à analyser (ex: "discrimination", "télétravail")
-            k: Nombre d'articles à récupérer
-        
-        Returns:
-            Analyse structurée avec statistiques
-        """
-        results = self.search(topic, k=k, min_score=0.4)
-        
-        if not results:
-            return None
-        
-        # Statistiques
-        sections = {}
-        etats = {}
-        longueurs = []
-        
-        for result in results:
-            article = result['article']
-            
-            # Par section
-            if article['chemin_hierarchique']:
-                section = article['chemin_hierarchique'][0]
-                sections[section] = sections.get(section, 0) + 1
-            
-            # Par état
-            etat = article['etat']
-            etats[etat] = etats.get(etat, 0) + 1
-            
-            # Longueur
-            longueurs.append(len(article['contenu']))
-        
-        analysis = {
-            'topic': topic,
-            'num_articles': len(results),
-            'sections': sections,
-            'etats': etats,
-            'longueur_moyenne': np.mean(longueurs) if longueurs else 0,
-            'articles': results
-        }
-        
-        return analysis
-    
+                preview = article["contenu"][:400].replace("\n", " ")
+                print(f"   📝 {preview}{'...' if len(article['contenu']) > 400 else ''}")
+
     def display_analysis(self, analysis):
-        """Affiche l'analyse d'un sujet"""
-        
         if analysis is None:
             print("❌ Aucune analyse disponible")
             return
-        
-        print(f"\n{'='*70}")
+
+        print(f"\n{'=' * 80}")
         print(f"📊 ANALYSE DU SUJET : {analysis['topic']}")
-        print('='*70)
-        
-        print(f"\n📚 {analysis['num_articles']} articles pertinents trouvés")
-        
-        print(f"\n📂 Répartition par section :")
-        for section, count in sorted(analysis['sections'].items(), key=lambda x: x[1], reverse=True):
-            print(f"   {count:3d} articles → {section[:60]}")
-        
-        print(f"\n⚖️  Répartition par état :")
-        for etat, count in analysis['etats'].items():
-            print(f"   {count:3d} articles → {etat}")
-        
-        print(f"\n📝 Longueur moyenne des articles : {analysis['longueur_moyenne']:.0f} caractères")
-        
-        print(f"\n{'─'*70}")
-        print("🔝 Top 5 articles les plus pertinents :")
-        print('─'*70)
-        
-        for i, result in enumerate(analysis['articles'][:5], 1):
-            article = result['article']
-            print(f"\n{i}. Article {article['num']} (score: {result['score']:.3f})")
-            if article['chemin_hierarchique']:
-                print(f"   {' > '.join(article['chemin_hierarchique'][-2:])}")
-            print(f"   {article['contenu'][:150]}...")
+        print("=" * 80)
+        print(f"\n📚 {analysis['num_articles']} résultats pertinents")
+
+        print("\n📄 Types de texte :")
+        for name, count in sorted(analysis["types"].items(), key=lambda x: x[1], reverse=True):
+            print(f"   {count:3d} → {name}")
+
+        print("\n📚 Textes les plus représentés :")
+        for name, count in sorted(analysis["textes"].items(), key=lambda x: x[1], reverse=True)[:10]:
+            print(f"   {count:3d} → {name[:70]}")
+
+        print(f"\n📝 Longueur moyenne : {analysis['longueur_moyenne']:.0f} caractères")
+        print("\n🔝 Top 5 :")
+        for i, result in enumerate(analysis["articles"][:5], 1):
+            a = result["article"]
+            print(
+                f"   {i}. {a['metadata'].get('texte_titre')} — "
+                f"Article {a['num']} ({result['score']:.3f})"
+            )
 
 
-def interactive_mode(searcher):
-    """Mode interactif de recherche"""
-    
-    print("\n" + "="*70)
-    print("🔍 MODE INTERACTIF - RECHERCHE DANS LE CODE DU TRAVAIL")
-    print("="*70)
-    print("\nCommandes disponibles :")
-    print("  - Tapez votre question pour rechercher")
-    print("  - 'analyse [sujet]' : Analyse approfondie d'un sujet")
-    print("  - 'similaires [num]' : Articles similaires (ex: similaires L1132-1)")
-    print("  - 'full' : Afficher le contenu complet des résultats")
-    print("  - 'quit' : Quitter")
-    print()
-    
+def interactive_mode(searcher: LegiSearch):
+    print("\n" + "=" * 80)
+    print("🔍 MODE INTERACTIF - POSTGRESQL + PGVECTOR")
+    print("=" * 80)
+    print("\nCommandes :")
+    print("  - question libre")
+    print("  - analyse [sujet]")
+    print("  - similaires [article]                  ex: similaires L1132-1")
+    print("  - similaires [CID_TEXTE] [article]      ex: similaires LEGITEXT000006072050 L1132-1")
+    print("  - full")
+    print("  - quit")
+
     show_full = False
-    
     while True:
         try:
-            query = input("\n💬 Votre requête : ").strip()
-            
-            if not query:
+            raw = input("\n💬 Votre requête : ").strip()
+            if not raw:
                 continue
-            
-            if query.lower() == 'quit':
+            if raw.lower() == "quit":
                 print("👋 Au revoir !")
                 break
-            
-            elif query.lower() == 'full':
+            if raw.lower() == "full":
                 show_full = not show_full
-                print(f"{'✅' if show_full else '❌'} Affichage contenu complet : {show_full}")
+                print(f"{'✅' if show_full else '❌'} Contenu complet : {show_full}")
                 continue
-            
-            elif query.lower().startswith('analyse '):
-                topic = query[8:].strip()
-                print(f"\n🔍 Analyse du sujet : {topic}")
-                analysis = searcher.analyze_topic(topic, k=20)
-                searcher.display_analysis(analysis)
-            
-            elif query.lower().startswith('similaires '):
-                article_num = query[11:].strip()
-                print(f"\n🔍 Articles similaires à {article_num}")
-                results = searcher.find_related_articles(article_num, k=5)
-                searcher.display_results(results, show_full)
-            
-            else:
-                # Recherche normale
-                results = searcher.search(query, k=10)
-                searcher.display_results(results, show_full)
-        
-        except KeyboardInterrupt:
-            print("\n\n👋 Au revoir !")
-            break
-        except Exception as e:
-            print(f"❌ Erreur : {e}")
-
-
-def run_validation_tests(searcher):
-    """Exécute une série de tests de validation"""
-    
-    print("\n" + "="*70)
-    print("🧪 TESTS DE VALIDATION DU SYSTÈME")
-    print("="*70)
-    
-    test_cases = [
-        {
-            'name': "Test 1 : Discrimination",
-            'query': "Quels sont les droits du salarié en cas de discrimination au travail ?",
-            'expected_articles': ["L1132-1", "L1132-2", "L1132-3"],
-            'k': 10
-        },
-        {
-            'name': "Test 2 : Effectifs",
-            'query': "Comment calculer les effectifs de l'entreprise pour les obligations légales ?",
-            'expected_articles': ["L1111-2", "L1111-3"],
-            'k': 10
-        },
-        {
-            'name': "Test 3 : Télétravail",
-            'query': "télétravail conditions mise en place",
-            'expected_articles': [],  # À définir selon votre connaissance
-            'k': 10
-        },
-        {
-            'name': "Test 4 : Harcèlement",
-            'query': "harcèlement moral sanctions protection salarié",
-            'expected_articles': [],
-            'k': 10
-        }
-    ]
-    
-    total_tests = len(test_cases)
-    passed_tests = 0
-    
-    for test in test_cases:
-        print(f"\n{'─'*70}")
-        print(f"🧪 {test['name']}")
-        print(f"   Requête : {test['query']}")
-        print('─'*70)
-        
-        results = searcher.search(test['query'], k=test['k'])
-        
-        print(f"\n   📊 {len(results)} résultats trouvés")
-        
-        if results:
-            print(f"   🔝 Top 3 :")
-            for i, result in enumerate(results[:3], 1):
-                print(f"      {i}. Article {result['num']} (score: {result['score']:.3f})")
-            
-            # Vérifier si les articles attendus sont dans les résultats
-            if test['expected_articles']:
-                found_nums = [r['num'] for r in results]
-                found_expected = [art for art in test['expected_articles'] if art in found_nums]
-                
-                if found_expected:
-                    print(f"\n   ✅ Articles attendus trouvés : {', '.join(found_expected)}")
-                    passed_tests += 1
+            if raw.lower().startswith("analyse "):
+                topic = raw[8:].strip()
+                searcher.display_analysis(searcher.analyze_topic(topic, k=20))
+                continue
+            if raw.lower().startswith("similaires "):
+                args = raw[11:].strip().split()
+                if len(args) == 1:
+                    results = searcher.find_related_articles(args[0], k=5)
+                elif len(args) >= 2:
+                    results = searcher.find_related_articles(args[-1], k=5, texte_source_id=args[0])
                 else:
-                    print(f"\n   ⚠️  Articles attendus NON trouvés : {', '.join(test['expected_articles'])}")
-            else:
-                print(f"\n   ℹ️  Pas d'articles de référence pour ce test")
-                passed_tests += 1
+                    results = []
+                searcher.display_results(results, show_full)
+                continue
+
+            searcher.display_results(searcher.search(raw, k=10), show_full)
+        except KeyboardInterrupt:
+            print("\n👋 Au revoir !")
+            break
+        except Exception as exc:
+            print(f"❌ Erreur : {exc}")
+
+
+def build_arg_parser():
+    p = argparse.ArgumentParser(description="Recherche LEGI PostgreSQL + pgvector")
+    p.add_argument("--dsn", default=DEFAULT_DSN)
+    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--device", default=None, help="cpu, cuda, cuda:0...")
+    p.add_argument("--etat", default="VIGUEUR")
+    p.add_argument("--query", help="Effectue une seule recherche puis quitte")
+    p.add_argument("-k", type=int, default=10)
+    p.add_argument("--min-score", type=float, default=0.30)
+    p.add_argument("--texte", help="Filtre LEGITEXT...")
+    p.add_argument("--type-texte", help="Filtre CODE, LOI, DECRET...")
+    p.add_argument("--full", action="store_true")
+    p.add_argument(
+        "--vector-only",
+        action="store_true",
+        help="Désactive le reranking lexical et utilise uniquement pgvector",
+    )
+    p.add_argument(
+        "--lexical-weight",
+        type=float,
+        default=0.25,
+        help="Poids du signal lexical dans le score hybride (défaut: 0.25)",
+    )
+    return p
+
+
+def main():
+    args = build_arg_parser().parse_args()
+    with LegiSearch(args.model, args.dsn, args.device, args.etat) as searcher:
+        if args.query:
+            results = searcher.search(
+            args.query,
+            k=args.k,
+                min_score=args.min_score,
+                texte_source_id=args.texte,
+                type_texte=args.type_texte,
+            
+            hybrid=not args.vector_only,
+            lexical_weight=args.lexical_weight,
+        )
+            searcher.display_results(results, args.full)
         else:
-            print(f"\n   ❌ Aucun résultat")
-    
-    print(f"\n{'='*70}")
-    print(f"📊 RÉSULTATS DES TESTS : {passed_tests}/{total_tests} réussis")
-    print("="*70)
+            interactive_mode(searcher)
+
+
+# Alias temporaire de compatibilite avec app.py existant.
+CodeDuTravailSearch = LegiSearch
 
 
 if __name__ == "__main__":
-    # Configuration
-    # MODEL_PATH = "../paraphrase-multilingual-MiniLM-L12-v2"  
-    MODEL_PATH = "../OrdalieTech/Solon-embeddings-base-0.1"
-    VECTORIZED_DIR = "./code_travail_vectorized"
-    
-    # Initialiser le système
-    searcher = CodeDuTravailSearch(MODEL_PATH, VECTORIZED_DIR)
-    
-    # Menu principal
-    print("\n" + "="*70)
-    print("🇫🇷 SYSTÈME DE RECHERCHE - CODE DU TRAVAIL")
-    print("="*70)
-    print("\nQue voulez-vous faire ?")
-    print("  1. Mode interactif (recherche libre)")
-    print("  2. Tests de validation")
-    print("  3. Les deux")
-    
-    choice = input("\nVotre choix (1/2/3) : ").strip()
-    
-    if choice == "1":
-        interactive_mode(searcher)
-    elif choice == "2":
-        run_validation_tests(searcher)
-    elif choice == "3":
-        run_validation_tests(searcher)
-        interactive_mode(searcher)
-    else:
-        print("❌ Choix invalide")
+    main()
