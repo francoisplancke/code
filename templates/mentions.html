@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mentions, confidentialité et sources</title>
+<style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f6f7f9;color:#1f2937}
+.container{max-width:980px;margin:0 auto;padding:24px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:22px;margin-bottom:18px}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}li{margin:.5rem 0}.muted{color:#6b7280}
+</style></head>
+<body><div class="container">
+<p><a href="{{ url_for('index') }}">← Retour à la recherche</a></p>
+<section class="card">
+<h1>Mentions, confidentialité et sources</h1>
+<p><strong>Exploitant / responsable du traitement :</strong> {{ operator_name }}</p>
+<p><strong>Contact confidentialité :</strong> {{ privacy_contact }}</p>
+<p class="muted">Ces informations doivent être complétées avant toute mise à disposition publique.</p>
+</section>
+<section class="card">
+<h2>Avertissement juridique</h2>
+<p>Ce service est un outil expérimental de recherche documentaire. Il ne constitue pas un cabinet d'avocats,
+un service de consultation juridique, ni une source officielle du droit. Aucun résultat ne doit être utilisé
+comme seul fondement d'une décision juridique, réglementaire, contractuelle, disciplinaire ou contentieuse.</p>
+<p>La recherche sémantique peut omettre des dispositions pertinentes, faire remonter des textes hors contexte
+ou présenter un état des données qui ne reflète pas une modification intervenue après la date du corpus.
+L'utilisateur doit vérifier les textes, leur vigueur, leur contexte et leurs renvois directement sur Légifrance.</p>
+<p>Dans les limites autorisées par la loi applicable, aucune garantie d'exhaustivité, d'exactitude,
+de disponibilité ou d'adéquation à un usage particulier n'est fournie. Cette clause n'exclut aucune
+responsabilité qui ne pourrait légalement être exclue ou limitée.</p>
+</section>
+<section class="card">
+<h2>Source des données juridiques</h2>
+<p><strong>Source :</strong> <a href="{{ data_source_url }}" rel="noopener noreferrer">{{ data_source_name }}</a>.</p>
+<p><strong>Archive de référence :</strong> {{ data_archive }}</p>
+<p><strong>Date de référence déclarée :</strong> {{ data_date }}</p>
+<p>Les données Légifrance sont réutilisées en open data sous Licence Ouverte / Open Licence 2.0.
+Le texte authentique et opposable doit être vérifié sur le service officiel Légifrance lorsque cela est requis.</p>
+</section>
+<section class="card">
+<h2>Journalisation des recherches et données personnelles</h2>
+<p>Lorsqu'une recherche est effectuée, le service enregistre uniquement :</p>
+<ul><li>le texte de la requête ;</li><li>la date et l'heure ;</li><li>l'adresse IP telle qu'elle est vue par l'application.</li></ul>
+<p><strong>Finalités :</strong> sécurité du service, prévention des abus, diagnostic technique et amélioration du moteur.</p>
+<p><strong>Base juridique déclarée :</strong> {{ privacy_legal_basis }}</p>
+<p><strong>Durée de conservation :</strong> {{ query_log_retention_days }} jours maximum en base active, avec purge automatique.</p>
+<p>Les requêtes peuvent contenir des données personnelles. Évitez de saisir des données sensibles,
+secrets, identifiants, informations médicales ou autres données personnelles inutiles.</p>
+<p>Selon la réglementation applicable, les personnes peuvent disposer notamment de droits d'accès,
+de rectification, d'effacement, de limitation et d'opposition. Les demandes peuvent être adressées à :
+<strong>{{ privacy_contact }}</strong>. Une réclamation peut également être introduite auprès de la CNIL.</p>
+</section>
+</div></body></html>

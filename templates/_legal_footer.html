@@ -1,0 +1,18 @@
+<div class="card" style="font-size:.86rem;color:#4b5563;">
+  <strong>Avertissement.</strong>
+  Ce service est un outil de recherche documentaire et ne fournit pas de conseil juridique.
+  Les résultats sont générés par recherche sémantique et peuvent être incomplets, mal classés ou obsolètes.
+  Ils ne remplacent ni la consultation des textes officiels ni l'avis d'un professionnel qualifié.
+  Dans les limites permises par la loi, l'exploitant ne garantit ni l'exhaustivité, ni l'exactitude,
+  ni l'adéquation des résultats à une situation particulière. Pour toute décision juridique,
+  vérifiez systématiquement le texte officiel sur Légifrance.
+  <br><br>
+  <strong>Source :</strong>
+  <a href="{{ app_data_source_url }}" rel="noopener noreferrer">{{ app_data_source_name }}</a>,
+  archive {{ app_data_archive }}, date de référence {{ app_data_date }}.
+  Données réutilisées sous Licence Ouverte / Open Licence 2.0.
+  <br><br>
+  Les recherches sont journalisées avec leur horodatage et l'adresse IP d'origine vue par l'application,
+  pour une durée maximale configurée de {{ app_query_log_retention_days }} jours.
+  <a href="{{ url_for('legal_notices') }}">Mentions, confidentialité et sources</a>.
+</div>

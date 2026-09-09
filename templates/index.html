@@ -1,60 +1,124 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JurisNLP - Code du Travail</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-        .legal-path { font-size: 0.85rem; color: #6c757d; }
-        .article-card { border-left: 5px solid #0d6efd; transition: transform 0.2s; }
-        .article-card:hover { transform: scale(1.01); }
-        .highlight { background-color: #fff3cd; font-weight: bold; }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recherche juridique LEGI</title>
+<style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f6f7f9;color:#1f2937}
+.container{max-width:1180px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.search-grid{display:grid;grid-template-columns:2fr 1fr 1fr 110px;gap:12px;align-items:end}
+.field label{display:block;font-size:.86rem;font-weight:600;margin-bottom:6px;color:#4b5563}
+input,select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
+button{width:100%;padding:11px 14px;border:0;border-radius:8px;cursor:pointer;font-weight:700;background:#111827;color:#fff}
+.secondary-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:.9rem}
+.secondary-row input[type=checkbox]{width:auto}
+.secondary-row input[type=number]{width:100px}
+.muted{color:#6b7280}
+.result-title{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:.78rem;font-weight:700}
+.score{margin-left:auto;font-variant-numeric:tabular-nums}
+.path{font-size:.88rem;color:#4b5563;margin:8px 0}
+.meta{font-size:.84rem;color:#6b7280;margin:6px 0}
+.excerpt{line-height:1.55;white-space:pre-wrap}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
+.empty{text-align:center;color:#6b7280;padding:40px 20px}
+@media(max-width:850px){.search-grid{grid-template-columns:1fr}.score{margin-left:0}}
+</style>
 </head>
 <body>
+<div class="container">
+  <div class="card">
+    <h1>Recherche juridique LEGI</h1>
+    <p class="muted">Recherche parmi les versions <strong>{{ etat }}</strong> vectorisées dans PostgreSQL + pgvector.</p>
 
-<div class="container py-5">
-    <div class="text-center mb-5">
-        <h1 class="display-4">⚖️ JurisNLP</h1>
-        <p class="lead">Analyse sémantique du Code du Travail</p>
-    </div>
-
-    <div class="row justify-content-center mb-5">
-        <div class="col-md-8">
-            <form method="POST" class="input-group input-group-lg shadow-sm">
-                <input type="text" name="query" class="form-control" placeholder="Ex: Conditions du télétravail..." value="{{ query }}">
-                <button class="btn btn-primary" type="submit">Rechercher</button>
-            </form>
+    <form method="get" action="/">
+      <div class="search-grid">
+        <div class="field">
+          <label for="query">Question ou recherche</label>
+          <input id="query" name="query" value="{{ query }}" placeholder="Ex. obligations de l'employeur concernant le harcèlement moral">
         </div>
-    </div>
+
+        <div class="field">
+          <label for="type_texte">Type de texte</label>
+          <select id="type_texte" name="type_texte">
+            <option value="">Tous les types</option>
+            {% for item in text_types %}
+              <option value="{{ item }}" {% if type_texte == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="texte">Texte précis</label>
+          <input id="texte" name="texte" value="{{ texte }}" placeholder="LEGITEXT... / JORFTEXT...">
+        </div>
+
+        <div><button type="submit">Rechercher</button></div>
+      </div>
+
+      <div class="secondary-row">
+        <label><input type="checkbox" name="vector_only" value="1" {% if vector_only %}checked{% endif %}> Vectoriel uniquement</label>
+        <label>Poids lexical <input type="number" name="lexical_weight" min="0" max="1" step="0.05" value="{{ lexical_weight }}"></label>
+        <label>Résultats <input type="number" name="k" min="1" max="50" value="{{ k }}"></label>
+      </div>
+    </form>
+  </div>
+
+  {% if query %}
+    <h2>{{ results|length }} résultat(s)</h2>
 
     {% if results %}
-    <div class="row justify-content-center">
-        <div class="col-md-10">
-            <h3 class="mb-4">{{ results|length }} articles pertinents trouvés</h3>
-            {% for res in results %}
-            <div class="card mb-3 article-card shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <h5 class="card-title text-primary">Article {{ res.num }}</h5>
-                        <div>
-                            <span class="badge bg-light text-dark border me-2">Score: {{ "%.4f"|format(res.score) }}</span>
-                            <a href="/article/{{ res.id }}" class="btn btn-sm btn-primary">Voir l'article</a>
-                        </div>
-                    </div>                    
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% elif query %}
-    <div class="text-center">
-        <p class="text-muted">Aucun article trouvé pour cette requête.</p>
-    </div>
-    {% endif %}
-</div>
+      {% for result in results %}
+        {% set article = result.article %}
+        <article class="card">
+          <div class="result-title">
+            <span class="badge">{{ article.metadata.nature or 'TEXTE' }}</span>
+            <h3>
+              <a href="{{ url_for('view_article', article_id=article.id) }}">
+                {{ article.metadata.texte_titre or 'Texte sans titre' }}
+                {% if article.num %}— Article {{ article.num }}{% endif %}
+              </a>
+            </h3>
+            <strong class="score">{{ '%.3f'|format(result.score) }}</strong>
+          </div>
 
+          <div class="meta">
+            État : {{ article.etat }}
+            {% if article.date_debut %} · Début : {{ article.date_debut }}{% endif %}
+            {% if article.date_fin %} · Fin : {{ article.date_fin }}{% endif %}
+          </div>
+
+          <div class="meta">
+            Version : <a href="{{ url_for('view_article', article_id=article.id) }}">{{ article.id }}</a>
+            {% if article.metadata.texte_cid %}
+              · Texte :
+              <a href="{{ url_for('view_text', texte_source_id=article.metadata.texte_cid) }}">{{ article.metadata.texte_cid }}</a>
+            {% endif %}
+          </div>
+
+          {% if article.chemin_affichage %}
+            <div class="path">{{ article.chemin_affichage }}</div>
+          {% endif %}
+
+          <div class="excerpt">{{ article.contenu[:700] }}{% if article.contenu|length > 700 %}…{% endif %}</div>
+
+          {% if result.vector_score is defined %}
+            <div class="meta">
+              Score vectoriel : {{ '%.3f'|format(result.vector_score) }}
+              {% if result.lexical_score is defined %}
+                · Score lexical : {{ '%.3f'|format(result.lexical_score) }}
+              {% endif %}
+            </div>
+          {% endif %}
+        </article>
+      {% endfor %}
+    {% else %}
+      <div class="card empty">Aucun résultat avec les filtres actuels.</div>
+    {% endif %}
+  {% endif %}
+  {% include "_legal_footer.html" %}
+</div>
 </body>
 </html>

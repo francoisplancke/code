@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ texte.titre }}</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f6f7f9;color:#1f2937}
+.container{max-width:1000px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:16px}
+.row{padding:10px 0;border-top:1px solid #e5e7eb}.row:first-child{border-top:0}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
+.meta{color:#6b7280;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <p><a href="{{ url_for('index') }}">← Retour à la recherche</a></p>
+
+  <div class="card">
+    <h1>{{ texte.titre }}</h1>
+    <div class="meta">{{ texte.type }} · {{ texte.source_id }}</div>
+    <p>{{ articles|length }} version(s) {{ app_search_state }}</p>
+  </div>
+
+  <div class="card">
+    {% for article in articles %}
+      <div class="row">
+        <a href="{{ url_for('view_article', article_id=article.id) }}">
+          Article {{ article.num or '(sans numéro)' }}
+        </a>
+        <div class="meta">
+          {{ article.id }}
+          {% if article.date_debut %} · Début {{ article.date_debut }}{% endif %}
+          {% if article.date_fin %} · Fin {{ article.date_fin }}{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>
