@@ -62,6 +62,20 @@ Dimension des embeddings : **384**.
 
 Le projet est actuellement utilisé sous **WSL 2 / Ubuntu**.
 
+## Dépendances Python
+
+Le projet utilise les bibliothèques Python suivantes :
+
+| Bibliothèque | Utilisation |
+|---|---|
+| `psycopg[binary]` | Connexion à PostgreSQL |
+| `pgvector` | Support des vecteurs PostgreSQL / pgvector |
+| `sentence-transformers` | Génération des embeddings |
+| `torch` | Exécution du modèle, notamment sur GPU CUDA |
+| `numpy` | Manipulation des vecteurs |
+| `tqdm` | Barres de progression lors des imports/vectorisations |
+| `flask` | Application web |
+
 ### PostgreSQL
 
 ``` bash

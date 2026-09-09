@@ -1,0 +1,7 @@
+Flask
+numpy
+pgvector
+psycopg[binary]
+sentence-transformers
+torch
+tqdm
