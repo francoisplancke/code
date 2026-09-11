@@ -944,3 +944,28 @@ font pas encore partie de l'index sémantique principal.
 -   extraction d'obligations juridiques ;
 -   agents spécialisés en cohérence, simplification et analyse
     réglementaire.
+
+---
+
+## R1 — Refactoring à comportement constant
+
+La recherche est désormais séparée en composants testables sans changer l'interface publique `LegiSearch` :
+
+```text
+search_interactive.py          façade + CLI compatible
+legal/db/postgres.py           connexion PostgreSQL
+legal/db/repositories.py       métadonnées embedding_model
+legal/retrieval/embeddings.py  SentenceTransformer
+legal/retrieval/hybrid.py      SQL pgvector + scoring hybride
+```
+
+`app.py` continue d'utiliser `LegiSearch` et `searcher.conn`; cette compatibilité est volontaire pendant R1.
+
+Tests locaux :
+
+```bash
+python3 -m pip install pytest
+pytest
+```
+
+Le gate R1 complet doit également rejouer le benchmark R0 sur la base réelle et vérifier que le classement n'a pas régressé (top-10 overlap et MRR).

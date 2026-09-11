@@ -1,0 +1,9 @@
+pytest>=8
+Flask
+numpy
+pgvector
+psycopg[binary]
+sentence-transformers
+torch
+tqdm
+
