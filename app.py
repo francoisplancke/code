@@ -63,6 +63,25 @@ PRIVACY_LEGAL_BASIS = os.environ.get(
     "LEGAL_PRIVACY_LEGAL_BASIS",
     "Intérêt légitime de l’exploitant pour la sécurité, la prévention des abus et le diagnostic du service (à valider selon votre situation).",
 )
+TEXT_TYPE_LABELS = {
+    "ACCORD_FONCTION_PUBLIQUE": "Accord de la fonction publique",
+    "ARRETE": "Arrêté",
+    "AVIS": "Avis",
+    "CIRCULAIRE": "Circulaire",
+    "CODE": "Code",
+    "CONSTITUTION": "Constitution",
+    "CONVENTION": "Convention",
+    "DECISION": "Décision",
+    "DECRET": "Décret",
+    "DECRET_LOI": "Décret-loi",
+    "DELIBERATION": "Délibération",
+    "LOI": "Loi",
+    "LOI_CONSTIT": "Loi constitutionnelle",
+    "LOI_ORGANIQUE": "Loi organique",
+    "LOI_PROGRAMME": "Loi de programme",
+    "ORDONNANCE": "Ordonnance",
+    "RAPPORT": "Rapport",
+}
 
 
 print("⚡ Initialisation du moteur de recherche LEGI...")
@@ -146,20 +165,27 @@ def _get_article_by_version_source_id(article_id: str):
         },
     }
 
-
 def _get_text_types():
     """Types de textes disponibles pour alimenter un filtre UI."""
     with searcher.conn.cursor() as cur:
-        cur.execute(
-            """
+        cur.execute("""
             SELECT DISTINCT type
             FROM texte
             WHERE type IS NOT NULL AND type <> ''
             ORDER BY type
-            """
-        )
-        return [row[0] for row in cur.fetchall()]
+        """)
+        types = [row[0] for row in cur.fetchall()]
 
+    return [
+        {
+            "value": type_code,
+            "label": TEXT_TYPE_LABELS.get(
+                type_code,
+                type_code.replace("_", " ").title()
+            ),
+        }
+        for type_code in types
+    ]
 
 def _ensure_query_log_schema():
     with searcher.conn.cursor() as cur:

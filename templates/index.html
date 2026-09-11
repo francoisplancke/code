@@ -43,10 +43,10 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
         <div class="field">
           <label for="type_texte">Type de texte</label>
           <select id="type_texte" name="type_texte">
-            <option value="">Tous les types</option>
-            {% for item in text_types %}
-              <option value="{{ item }}" {% if type_texte == item %}selected{% endif %}>{{ item }}</option>
-            {% endfor %}
+            <option value="">Tous les types de textes</option>
+            {% for type in text_types %}
+                <option value="{{ type.value }}" {% if type_texte == type.value %}selected{% endif %}> {{ type.label }} </option>
+            {% endfor %} 
           </select>
         </div>
 
