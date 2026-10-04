@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recherche juridique — Union européenne</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f6f7f9;color:#1f2937}
+.container{max-width:1180px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.search-grid{display:grid;grid-template-columns:2fr 1fr 110px;gap:12px;align-items:end}
+.field label{display:block;font-size:.86rem;font-weight:600;margin-bottom:6px;color:#4b5563}
+input,select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
+button{width:100%;padding:11px 14px;border:0;border-radius:8px;cursor:pointer;font-weight:700;background:#111827;color:#fff}
+.secondary-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:.9rem}
+.secondary-row input[type=number]{width:100px}
+.muted,.meta{color:#6b7280}.meta{font-size:.84rem;margin:6px 0}
+.result-title{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:.78rem;font-weight:700}
+.score{margin-left:auto;font-variant-numeric:tabular-nums}
+.path{font-size:.88rem;color:#4b5563;margin:8px 0}
+.excerpt,.content{line-height:1.55;white-space:pre-wrap}
+.content{line-height:1.7;font-size:1.02rem}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
+.empty{text-align:center;color:#6b7280;padding:40px 20px}.topnav{margin-bottom:14px}
+@media(max-width:850px){.search-grid{grid-template-columns:1fr}.score{margin-left:0}}</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
+<body>{% include "_corpus_nav.html" %}<div class="container">
+<div class="card">
+ <h1>Recherche juridique — Union européenne</h1>
+ <p class="muted">Recherche plein texte dans le corpus européen importé dans PostgreSQL.</p>
+ <form method="get" action="{{ url_for('eu_search') }}">
+  <div class="search-grid">
+   <div class="field"><label for="query">Question ou recherche</label><input id="query" name="query" value="{{ query }}" placeholder="Ex. protection des données, obligations de notification, ou CELEX"></div>
+   <div class="field"><label for="k">Nombre de résultats</label><input id="k" type="number" name="k" min="1" max="50" value="{{ k }}"></div>
+   <div><button type="submit">Rechercher</button></div>
+  </div>
+ </form>
+</div>
+{% if query %}
+<h2>{{ results|length }} résultat(s)</h2>
+{% if results %}
+ {% for r in results %}
+ <article class="card">
+  <div class="result-title">
+   <span class="badge">{{ r.act_type or 'UE' }}</span>
+   <h3><a href="{{ url_for('eu_text',celex=r.celex) }}">{{ r.title or r.celex }}{% if r.label %} — {{ r.label }}{% endif %}</a></h3>
+   {% if r.score %}<strong class="score">{{ '%.3f'|format(r.score) }}</strong>{% endif %}
+  </div>
+  <div class="meta">CELEX : <a href="{{ url_for('eu_text',celex=r.celex) }}">{{ r.celex }}</a> · {{ r.kind }}{% if r.logical_path %} · {{ r.logical_path }}{% endif %}</div>
+  <div class="excerpt">{{ r.text[:700] }}{% if r.text|length > 700 %}…{% endif %}</div>
+ </article>
+ {% endfor %}
+{% else %}<div class="card empty">Aucun résultat avec la recherche actuelle.</div>{% endif %}
+{% endif %}
+{% include "_legal_footer_eu.html" %}</div></body></html>

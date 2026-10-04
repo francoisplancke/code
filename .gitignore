@@ -1,51 +1,54 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Environnement virtuel
+# Virtual environments / local tooling
 .venv/
 venv/
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
 
-# Windows / WSL
+# OS / editors
 *Zone.Identifier*
 Thumbs.db
 Desktop.ini
-
-# macOS
 .DS_Store
+*.tmp
+*.bak
+*.swp
+*~
 
-# Corpus DILA / LEGI
+# Generated legal data and caches
+artifacts/
+data/
+cache/
+*.sqlite
+*.sqlite3
+
+# Source corpora: large, reproducible, never commit
 *.tar.gz
 *.tgz
+LEG_FR_FMX_*.zip
 Freemium_legi_*
 LEGI_*.tar.gz
 
-# Anciens corpus / artefacts locaux
-Code_du_travail.xml
-code_travail/
-code_travail_vectorized/
-
-# Anciens index / embeddings locaux
+# Derived ML/search artefacts
 *.npy
 *.npz
 *.faiss
 *.index
 
-# Logs
+# Logs / local runtime
 *.log
+*.pid
 
-# Variables d'environnement / secrets
-.env
-.env.*
-!.env.example
-
-# IDE
-.vscode/
-.idea/
-
-# Fichiers temporaires
-*.tmp
-*.bak
-*.swp
-*~
+# Legacy local corpus folders
+Code_du_travail.xml
+code_travail/
+code_travail_vectorized/

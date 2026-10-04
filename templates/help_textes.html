@@ -1,0 +1,44 @@
+<h1>Textes disponibles</h1>
+
+<p>
+  Cet écran permet de retrouver l’identifiant à utiliser dans le champ
+  <strong>Texte précis</strong>.
+</p>
+
+<form method="get">
+  <label for="q">Rechercher un texte</label>
+  <input
+    id="q"
+    name="q"
+    type="search"
+    value="{{ q }}"
+    placeholder="Titre, numéro ou identifiant..."
+  >
+  <button type="submit">Rechercher</button>
+</form>
+
+<p>{{ total }} texte(s) trouvé(s)</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Titre</th>
+      <th>Numéro</th>
+      <th>Identifiant</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for texte in textes %}
+      <tr>
+        <td>{{ texte.type }}</td>
+        <td>{{ texte.titre }}</td>
+        <td>{{ texte.numero }}</td>
+        <td>
+          <code>{{ texte.source_id }}</code>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

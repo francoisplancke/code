@@ -17,6 +17,8 @@ import os
 from flask import Flask, abort, render_template, request
 
 from search_interactive import LegiSearch, _format_chemin_hierarchique
+from legal.eu.ui_routes_postgres import register_eu_routes
+from legal.eu.postgres_search import EuPostgresSearch
 
 
 app = Flask(__name__)
@@ -51,6 +53,10 @@ DATA_ARCHIVE = os.environ.get(
     "Freemium_legi_global_20250713-140000.tar.gz",
 )
 DATA_DATE = os.environ.get("LEGAL_DATA_DATE", "2025-07-13")
+EU_DATA_SOURCE_NAME = os.environ.get("LEGAL_EU_DATA_SOURCE_NAME", "EUR-Lex / Publications Office of the European Union")
+EU_DATA_SOURCE_URL = os.environ.get("LEGAL_EU_DATA_SOURCE_URL", "https://eur-lex.europa.eu/content/help/data-reuse/reuse-contents-eurlex-details.html")
+EU_DATA_ARCHIVE = os.environ.get("LEGAL_EU_DATA_ARCHIVE", os.path.basename(os.environ.get("LEGAL_EU_FMX_ZIP", "LEG_FR_FMX_<date>_01_00.zip")))
+EU_DATA_DATE = os.environ.get("LEGAL_EU_DATA_DATE", "à renseigner")
 OPERATOR_NAME = os.environ.get(
     "LEGAL_OPERATOR_NAME",
     "Exploitant du service — identité à renseigner avant mise en production",
@@ -92,6 +98,10 @@ searcher = LegiSearch(
     etat=ETAT,
 )
 
+
+# R7.3.2 - PostgreSQL is the backend for both corpora.
+eu_searcher = EuPostgresSearch(searcher.conn)
+register_eu_routes(app, eu_searcher, searcher)
 
 def _get_article_by_version_source_id(article_id: str):
     """Charge une version LEGI précise depuis PostgreSQL."""
@@ -384,6 +394,10 @@ def legal_notices():
 
 
 @app.context_processor
+def inject_corpus_context():
+    return {"active_corpus": "eu" if request.path.startswith("/eu") else "fr"}
+
+@app.context_processor
 def inject_app_context():
     return {
         "app_corpus_name": "LEGI",
@@ -393,6 +407,10 @@ def inject_app_context():
         "app_data_archive": DATA_ARCHIVE,
         "app_data_date": DATA_DATE,
         "app_query_log_retention_days": QUERY_LOG_RETENTION_DAYS,
+        "app_eu_data_source_name": EU_DATA_SOURCE_NAME,
+        "app_eu_data_source_url": EU_DATA_SOURCE_URL,
+        "app_eu_data_archive": EU_DATA_ARCHIVE,
+        "app_eu_data_date": EU_DATA_DATE,
     }
 
 

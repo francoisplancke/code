@@ -26,8 +26,8 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
 .empty{text-align:center;color:#6b7280;padding:40px 20px}
 @media(max-width:850px){.search-grid{grid-template-columns:1fr}.score{margin-left:0}}
 </style>
-</head>
-<body>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
+<body>{% include "_corpus_nav.html" %}
 <div class="container">
   <div class="card">
     <h1>Recherche juridique LEGI</h1>
@@ -51,7 +51,7 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
         </div>
 
         <div class="field">
-          <label for="texte">Texte précis</label>
+          <label for="texte">Texte précis (identifiant Légifrance)</label>
           <input id="texte" name="texte" value="{{ texte }}" placeholder="LEGITEXT... / JORFTEXT...">
         </div>
 

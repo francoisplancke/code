@@ -16,8 +16,8 @@ body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-seri
 a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
 .topnav{margin-bottom:14px}
 </style>
-</head>
-<body>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
+<body>{% include "_corpus_nav.html" %}
 <div class="container">
   <div class="topnav"><a href="{{ url_for('index') }}">← Retour à la recherche</a></div>
 

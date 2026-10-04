@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matching français — {{ act.celex }}</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f6f7f9;color:#1f2937}
+.container{max-width:1180px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.search-grid{display:grid;grid-template-columns:2fr 1fr 110px;gap:12px;align-items:end}
+.field label{display:block;font-size:.86rem;font-weight:600;margin-bottom:6px;color:#4b5563}
+input,select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
+button{width:100%;padding:11px 14px;border:0;border-radius:8px;cursor:pointer;font-weight:700;background:#111827;color:#fff}
+.secondary-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:.9rem}
+.secondary-row input[type=number]{width:100px}
+.muted,.meta{color:#6b7280}.meta{font-size:.84rem;margin:6px 0}
+.result-title{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:.78rem;font-weight:700}
+.score{margin-left:auto;font-variant-numeric:tabular-nums}
+.path{font-size:.88rem;color:#4b5563;margin:8px 0}
+.excerpt,.content{line-height:1.55;white-space:pre-wrap}
+.content{line-height:1.7;font-size:1.02rem}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}
+.empty{text-align:center;color:#6b7280;padding:40px 20px}.topnav{margin-bottom:14px}
+@media(max-width:850px){.search-grid{grid-template-columns:1fr}.score{margin-left:0}}</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
+<body>{% include "_corpus_nav.html" %}<div class="container">
+<div class="topnav"><a href="{{ url_for('eu_text',celex=act.celex) }}">← Retour au texte européen</a></div>
+<div class="card"><span class="badge">UE → France</span><h1>Correspondances françaises proposées</h1><p class="muted">Recherche documentaire uniquement : aucune liaison n’est enregistrée automatiquement.</p>
+{% if chosen %}<div class="meta">Source : {{ chosen.kind }} {{ chosen.label or chosen.logical_path or chosen.provision_id }}</div><div class="excerpt">{{ chosen.text }}</div>{% else %}<div class="meta">Source : texte européen {{ act.celex }}</div>{% endif %}</div>
+{% if matches %}
+<h2>{{ matches|length }} proposition(s)</h2>
+{% for result in matches %}{% set article=result.article %}
+<article class="card"><div class="result-title"><span class="badge">{{ article.metadata.nature or 'TEXTE' }}</span><h3><a href="{{ url_for('view_article',article_id=article.id) }}">{{ article.metadata.texte_titre or 'Texte sans titre' }}{% if article.num %} — Article {{ article.num }}{% endif %}</a></h3><strong class="score">{{ '%.3f'|format(result.score) }}</strong></div>
+<div class="meta">Version : {{ article.id }}{% if article.metadata.texte_cid %} · Texte : <a href="{{ url_for('view_text',texte_source_id=article.metadata.texte_cid) }}">{{ article.metadata.texte_cid }}</a>{% endif %}</div>
+{% if article.chemin_affichage %}<div class="path">{{ article.chemin_affichage }}</div>{% endif %}<div class="excerpt">{{ article.contenu[:700] }}{% if article.contenu|length>700 %}…{% endif %}</div></article>
+{% endfor %}
+{% else %}<div class="card empty">Aucune proposition.</div>{% endif %}
+{% include "_legal_footer_eu.html" %}</div></body></html>
