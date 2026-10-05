@@ -6,19 +6,45 @@ PostgreSQL est la source de vérité. Les archives sources, artefacts intermédi
 
 ## Architecture
 
+Le système sépare explicitement **sources canoniques**, **stockage**, **recherche** et **analyse**. Les LLM et services d'enrichissement ne font jamais partie de la chaîne de vérité documentaire.
+
 ```text
-DILA LEGI (.tar.gz) ── parse_legi_postgres.py ──┐
-                                                ├─ PostgreSQL ── app.py
-EUR-Lex FMX (.zip) ── build.py eu ──────────────┘
-                         │
-                         ├─ identité CELEX/CELLAR
-                         ├─ arbre des dispositions
-                         └─ normalisation juridique
+Sources canoniques                    Ingestion déterministe
+DILA / LEGI (.tar.gz) ─────────────► parse_legi_postgres.py ───┐
+                                                               │
+EUR-Lex FMX + CELLAR ───────────────► build.py eu ─────────────┤
+  ├─ identité CELEX/CELLAR                                      │
+  ├─ arbre des dispositions                                     ▼
+  └─ normalisation juridique                            PostgreSQL = vérité
+                                                        documentaire
+Sources externes optionnelles                                  │
+CELLAR NIM ── build.py nim ──► artefacts transposition         ├─ corpus FR
+JEV ──► enrichissement futur/non bloquant                      └─ corpus UE
+                                                               │
+                          ┌────────────────────────────────────┤
+                          ▼                                    ▼
+                  Recherche hybride FR                 Recherche lexicale UE
+                  pgvector + PostgreSQL                PostgreSQL / GIN
+                          └───────────────┬────────────────────┘
+                                          ▼
+                                      Flask / UI
+                                    France ↔ UE
+                                          │
+                                          ▼
+                                Couche d'analyse R7.4+
+                          obligations / comparaison / coûts
+                                          │
+                          abstraction LLM configurable
+                    ┌──────────┬──────────┼───────────┐
+                  local      OpenAI    DeepSeek     Gemini
+                 défaut      fallback   fallback     fallback
 ```
 
-Tables principales France : `corpus`, `texte`, `unite`, `version`, `relation_juridique`, `embedding_model`, `version_embedding`.
+**PostgreSQL est la source de vérité**. Les tables principales France sont `corpus`, `texte`, `unite`, `version`, `relation_juridique`, `embedding_model`, `version_embedding`. Les tables UE sont `eu_act` et `eu_provision`; `eu_provision.search_vector` est généré et indexé en GIN. Les index, embeddings, caches SPARQL et artefacts sont dérivés et reproductibles.
 
-Tables UE : `eu_act`, `eu_provision`. `eu_provision.search_vector` est un `tsvector` généré et indexé en GIN.
+La couche `legal/llm/` est volontairement indépendante du build. `local` est le provider par défaut et vise un endpoint compatible avec l'API OpenAI; `openai`, `deepseek` et `gemini` sont des fallbacks configurables. Aucune clé LLM n'est nécessaire pour `build.py legi`, `build.py eu` ou `build.py nim`.
+
+JEV n'est pas une source canonique et n'est actuellement appelé par aucun pipeline. Sa configuration est réservée à un éventuel enrichissement externe futur : une indisponibilité de JEV ne doit jamais empêcher la reconstruction ou la consultation des corpus.
 
 ## Prérequis
 
@@ -109,6 +135,15 @@ Variables principales :
 | `LEGAL_EU_DATA_DATE` | date du snapshot UE affichée | à renseigner |
 
 Voir `.env.example` pour la liste complète.
+
+### LLM et services externes optionnels
+
+Le provider d'analyse se sélectionne avec `LEGAL_LLM_PROVIDER=local|openai|deepseek|gemini`. `LEGAL_LLM_MODEL`, `LEGAL_LLM_BASE_URL` et `LEGAL_LLM_TIMEOUT` permettent de surcharger le modèle, l'endpoint et le délai. Pour un endpoint local protégé, utiliser `LEGAL_LLM_API_KEY`.
+
+Les providers cloud exigent uniquement leur propre secret : `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` ou `GEMINI_API_KEY`. Ces secrets doivent rester dans `.env` ou le gestionnaire de secrets de déploiement et ne doivent jamais être commités. Ils ne sont pas requis pour construire les bases.
+
+`JEV_API_KEY` et `JEV_BASE_URL` sont réservés à JEV. **Le code actuel ne consomme pas JEV** : ces variables documentent l'architecture cible d'enrichissement optionnel et ne sont requises par aucune commande de build ou d'exploitation actuelle.
+
 
 ## Construire la base
 
