@@ -20,10 +20,11 @@ Pour la vectorisation :
 
 Exemple :
     python parse_legi_postgres.py Freemium_legi_global_20250713-140000.tar.gz \
-        --dsn "postgresql://postgres:postgres@localhost:5432/legal"
+        --dsn os.getenv("LEGAL_DSN")
 """
 
 from __future__ import annotations
+import os
 
 import argparse
 import hashlib
@@ -931,7 +932,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("source", help="Dossier, fichier XML, .tar.gz ou .tgz LEGI")
     p.add_argument(
         "--dsn",
-        default="postgresql://postgres:postgres@localhost:5432/legal",
+        default=os.getenv("LEGAL_DSN"),
         help="DSN PostgreSQL",
     )
     p.add_argument("--corpus-code", default="LEGI")

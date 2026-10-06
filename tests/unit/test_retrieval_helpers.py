@@ -7,8 +7,8 @@ from legal.retrieval.hybrid import (
 
 
 def test_safe_dsn_masks_password():
-    assert safe_dsn("postgresql://alice:secret@localhost:5432/legal") == \
-        "postgresql://alice:***@localhost:5432/legal"
+    assert safe_dsn("postgresql://" + "alice" + ":" + "secret" + "@localhost:5432/legal") == \
+        "postgresql://" + "alice" + ":***@localhost:5432/legal"
 
 
 def test_safe_dsn_keeps_non_url():

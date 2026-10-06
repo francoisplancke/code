@@ -5,7 +5,7 @@ Prerequis:
     pip install flask "psycopg[binary]" pgvector sentence-transformers numpy
 
 Exemple:
-    export LEGAL_DSN="postgresql://postgres:postgres@localhost:5432/legal"
+    export LEGAL_DSN=os.getenv("LEGAL_DSN")
     export LEGAL_MODEL="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     export LEGAL_DEVICE="cuda"
     python3 app.py
@@ -25,7 +25,7 @@ app = Flask(__name__)
 
 DSN = os.environ.get(
     "LEGAL_DSN",
-    "postgresql://postgres:postgres@localhost:5432/legal",
+    os.getenv("LEGAL_DSN"),
 )
 MODEL_NAME = os.environ.get(
     "LEGAL_MODEL",

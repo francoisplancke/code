@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Reproducible build entry point for the French LEGI and EU corpora."""
 from __future__ import annotations
+import os
 import argparse, json, os, subprocess, sys
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
 ART=ROOT/"artifacts"/"eu"
-DEFAULT_DSN=os.getenv("LEGAL_DSN","postgresql://postgres:postgres@localhost:5432/legal")
+DEFAULT_DSN=os.getenv("LEGAL_DSN",os.getenv("LEGAL_DSN"))
 
 def show(name, value):
     print(f"\n== {name} ==\n"+json.dumps(value,ensure_ascii=False,indent=2))

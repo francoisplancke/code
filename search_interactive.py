@@ -4,6 +4,7 @@ R1 sépare désormais connexion DB, chargement des embeddings et moteur de retri
 L'API publique historique ``LegiSearch`` est conservée pour ``app.py``.
 """
 from __future__ import annotations
+import os
 
 import argparse
 from typing import Optional
@@ -15,7 +16,7 @@ from legal.retrieval import (
     format_chemin_hierarchique,
 )
 
-DEFAULT_DSN = "postgresql://postgres:postgres@localhost:5432/legal"
+DEFAULT_DSN = os.getenv("LEGAL_DSN")
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 # Alias de compatibilité avec app.py et les imports existants.
