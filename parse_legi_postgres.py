@@ -705,11 +705,13 @@ def vectorize_vigueur(
     Reprenable : une ligne dont le checksum n'a pas changé et qui possède déjà
     un embedding pour le même modèle est ignorée.
     """
-    np, SentenceTransformer, Vector, register_vector = _load_embedding_dependencies()
+    np, _SentenceTransformer, Vector, register_vector = _load_embedding_dependencies()
+    from legal.retrieval.embeddings import create_embedding_provider
 
-    print(f"Chargement du modèle d'embeddings : {model_name}")
-    model = SentenceTransformer(model_name, device=device) if device else SentenceTransformer(model_name)
-    dimension = int(model.get_sentence_embedding_dimension())
+    print(f"Chargement du provider d'embeddings : {model_name}")
+    model = create_embedding_provider(model_name=model_name, device=device)
+    dimension = int(model.dimension)
+    print(f"Provider actif : {getattr(model, 'provider_name', 'unknown')} ; dimension={dimension}")
 
     conn = psycopg.connect(dsn)
     try:
@@ -730,7 +732,7 @@ def vectorize_vigueur(
                     metadata = embedding_model.metadata || EXCLUDED.metadata
                 RETURNING id
                 """,
-                (model_name, dimension, Jsonb({"source": "sentence-transformers"})),
+                (model_name, dimension, Jsonb({"source": "embedding-provider", "provider": getattr(model, "provider_name", "unknown")})),
             )
             model_id = int(cur.fetchone()[0])
         conn.commit()
@@ -801,12 +803,10 @@ def vectorize_vigueur(
             for start in range(0, len(docs), batch_size):
                 batch = docs[start:start + batch_size]
                 texts = [_embedding_text(x) for x in batch]
-                vectors = model.encode(
+                vectors = model.encode_many(
                     texts,
                     batch_size=batch_size,
-                    show_progress_bar=False,
-                    convert_to_numpy=True,
-                    normalize_embeddings=True,
+                    normalize=True,
                 )
                 records = [
                     (
@@ -956,12 +956,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--embedding-model",
-        default="../paraphrase-multilingual-MiniLM-L12-v2",
-        help="Modèle SentenceTransformer local ou Hugging Face",
+        default=os.getenv("LEGAL_EMBEDDING_MODEL") or os.getenv("LEGAL_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        help="Modèle d’embeddings (LEGAL_EMBEDDING_MODEL ; LEGAL_MODEL accepté pour compatibilité)",
     )
     p.add_argument("--embedding-batch-size", type=int, default=64)
     p.add_argument("--embedding-fetch-size", type=int, default=1000)
-    p.add_argument("--embedding-device", default=None, help="Ex: cuda, cpu ; auto si omis")
+    p.add_argument("--embedding-device", default=os.getenv("LEGAL_EMBEDDING_DEVICE") or os.getenv("LEGAL_DEVICE"), help="Ex: cuda, cpu ; auto si omis")
     p.add_argument(
         "--no-hnsw",
         action="store_true",

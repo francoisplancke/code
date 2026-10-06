@@ -7,7 +7,8 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
 ART=ROOT/"artifacts"/"eu"
-DEFAULT_DSN=os.getenv("LEGAL_DSN",os.getenv("LEGAL_DSN"))
+DEFAULT_DSN=os.getenv("LEGAL_DSN")
+DEFAULT_EMBEDDING_MODEL=os.getenv("LEGAL_EMBEDDING_MODEL") or os.getenv("LEGAL_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 def show(name, value):
     print(f"\n== {name} ==\n"+json.dumps(value,ensure_ascii=False,indent=2))
@@ -17,6 +18,10 @@ def build_legi(source, dsn, model, device, no_vectorize=False):
     if device: cmd += ["--embedding-device",device]
     if no_vectorize: cmd.append("--no-vectorize")
     subprocess.run(cmd,check=True,cwd=ROOT)
+
+def vectorize_legi(dsn, model, device, batch_size=64, fetch_size=1000, create_hnsw=True):
+    from parse_legi_postgres import vectorize_vigueur
+    return vectorize_vigueur(dsn=dsn, model_name=model, batch_size=batch_size, fetch_size=fetch_size, device=device, create_hnsw=create_hnsw)
 
 def build_eu(zip_path, dsn, batch=250):
     import psycopg
@@ -63,18 +68,24 @@ def main():
     sub=p.add_subparsers(dest="cmd",required=True)
     l=sub.add_parser("legi",help="import/vectorize the French LEGI corpus")
     l.add_argument("source",nargs="?",default=os.getenv("LEGAL_LEGI_ARCHIVE")); l.add_argument("--dsn",default=DEFAULT_DSN)
-    l.add_argument("--model",default=os.getenv("LEGAL_MODEL","sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")); l.add_argument("--device",default=os.getenv("LEGAL_DEVICE")); l.add_argument("--no-vectorize",action="store_true")
+    l.add_argument("--model",default=DEFAULT_EMBEDDING_MODEL); l.add_argument("--device",default=os.getenv("LEGAL_DEVICE")); l.add_argument("--no-vectorize",action="store_true")
+    v=sub.add_parser("vectorize",help="vectorize already imported LEGI versions without reimport")
+    v.add_argument("--dsn",default=DEFAULT_DSN); v.add_argument("--model",default=DEFAULT_EMBEDDING_MODEL); v.add_argument("--device",default=os.getenv("LEGAL_EMBEDDING_DEVICE") or os.getenv("LEGAL_DEVICE"))
+    v.add_argument("--batch-size",type=int,default=64); v.add_argument("--fetch-size",type=int,default=1000); v.add_argument("--no-hnsw",action="store_true")
     e=sub.add_parser("eu",help="build EU corpus from the official FMX dump and import PostgreSQL")
     e.add_argument("source",nargs="?",default=os.getenv("LEGAL_EU_FMX_ZIP")); e.add_argument("--dsn",default=DEFAULT_DSN); e.add_argument("--sparql-batch",type=int,default=250)
     n=sub.add_parser("nim",help="optional: discover/enrich French national transposition measures")
     n.add_argument("--batch",type=int,default=50)
     a=sub.add_parser("all",help="build LEGI then EU")
     a.add_argument("--legi",default=os.getenv("LEGAL_LEGI_ARCHIVE")); a.add_argument("--eu",default=os.getenv("LEGAL_EU_FMX_ZIP")); a.add_argument("--dsn",default=DEFAULT_DSN)
-    a.add_argument("--model",default=os.getenv("LEGAL_MODEL","sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")); a.add_argument("--device",default=os.getenv("LEGAL_DEVICE"))
+    a.add_argument("--model",default=DEFAULT_EMBEDDING_MODEL); a.add_argument("--device",default=os.getenv("LEGAL_DEVICE"))
     x=p.parse_args()
     if x.cmd=="legi":
         if not x.source: p.error("LEGI source required (argument or LEGAL_LEGI_ARCHIVE)")
         build_legi(x.source,x.dsn,x.model,x.device,x.no_vectorize)
+    elif x.cmd=="vectorize":
+        if not x.dsn: p.error("LEGAL_DSN/--dsn required")
+        show("LEGI vectorization", vectorize_legi(x.dsn,x.model,x.device,x.batch_size,x.fetch_size,not x.no_hnsw))
     elif x.cmd=="eu":
         if not x.source: p.error("EU FMX ZIP required (argument or LEGAL_EU_FMX_ZIP)")
         build_eu(x.source,x.dsn,x.sparql_batch)

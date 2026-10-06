@@ -12,12 +12,12 @@ from typing import Optional
 from legal.db import EmbeddingModelRepository, PostgresDatabase, safe_dsn
 from legal.retrieval import (
     HybridSearchEngine,
-    SentenceTransformerEmbedder,
+    SentenceTransformerEmbedder, create_embedding_provider, embedding_model_from_env,
     format_chemin_hierarchique,
 )
 
 DEFAULT_DSN = os.getenv("LEGAL_DSN")
-DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEFAULT_MODEL = embedding_model_from_env()
 
 # Alias de compatibilité avec app.py et les imports existants.
 _format_chemin_hierarchique = format_chemin_hierarchique
@@ -34,7 +34,7 @@ class LegiSearch:
         etat: str = "VIGUEUR",
         *,
         database: PostgresDatabase | None = None,
-        embedder: SentenceTransformerEmbedder | None = None,
+        embedder: object | None = None,
     ):
         self.dsn = dsn
         self.model_name = model_path
@@ -50,8 +50,8 @@ class LegiSearch:
         # Connexion conservée pour compatibilité avec app.py R0.
         self.conn = self.database.connection
 
-        self.embedder = embedder or SentenceTransformerEmbedder(model_path, device=device)
-        self.model = self.embedder.model  # compatibilité avec du code externe éventuel
+        self.embedder = embedder or create_embedding_provider(model_name=model_path, device=device)
+        self.model = getattr(self.embedder, "model", None)  # local only; compatibility
         self.dimension = self.embedder.dimension
 
         repo = EmbeddingModelRepository(self.conn)

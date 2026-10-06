@@ -5,9 +5,9 @@ Prerequis:
     pip install flask "psycopg[binary]" pgvector sentence-transformers numpy
 
 Exemple:
-    export LEGAL_DSN=os.getenv("LEGAL_DSN")
-    export LEGAL_MODEL="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    export LEGAL_DEVICE="cuda"
+    export LEGAL_DSN="postgresql://user:password@localhost:5432/legal"
+    export LEGAL_EMBEDDING_MODEL="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    export LEGAL_EMBEDDING_DEVICE="cpu"
     python3 app.py
 """
 
@@ -23,15 +23,9 @@ from legal.eu.postgres_search import EuPostgresSearch
 
 app = Flask(__name__)
 
-DSN = os.environ.get(
-    "LEGAL_DSN",
-    os.getenv("LEGAL_DSN"),
-)
-MODEL_NAME = os.environ.get(
-    "LEGAL_MODEL",
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-)
-DEVICE = os.environ.get("LEGAL_DEVICE", "cuda")
+DSN = os.environ.get("LEGAL_DSN")
+MODEL_NAME = os.environ.get("LEGAL_EMBEDDING_MODEL") or os.environ.get("LEGAL_MODEL") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+DEVICE = os.environ.get("LEGAL_EMBEDDING_DEVICE") or os.environ.get("LEGAL_DEVICE")
 ETAT = os.environ.get("LEGAL_ETAT", "VIGUEUR")
 
 DEFAULT_K = int(os.environ.get("LEGAL_SEARCH_K", "10"))

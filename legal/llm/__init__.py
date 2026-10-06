@@ -1,3 +1,3 @@
-"""Configurable LLM providers. No provider is required for corpus builds."""
-from .providers import LLMConfig, LLMError, chat, load_config
-__all__ = ["LLMConfig", "LLMError", "chat", "load_config"]
+"""Configurable LLM providers with ordered fallback."""
+from .providers import LLMConfig, LLMError, LLMProviderUnavailable, chat, load_config, load_configs
+__all__ = ["LLMConfig", "LLMError", "LLMProviderUnavailable", "chat", "load_config", "load_configs"]
