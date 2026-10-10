@@ -97,6 +97,17 @@ searcher = LegiSearch(
 eu_searcher = EuPostgresSearch(searcher.conn)
 register_eu_routes(app, eu_searcher, searcher)
 
+@app.route('/stats')
+def stats_page():
+    from legal.stats import collect
+    try:
+        stats = collect(DSN)
+        return render_template('stats.html', stats=stats, active_corpus='stats')
+    except Exception:
+        app.logger.exception('Statistiques indisponibles')
+        return render_template('stats.html', stats=None, active_corpus='stats'), 503
+
+
 def _get_article_by_version_source_id(article_id: str):
     """Charge une version LEGI précise depuis PostgreSQL."""
     sql = """

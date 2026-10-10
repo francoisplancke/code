@@ -4,4 +4,4 @@ pgvector
 psycopg[binary]
 sentence-transformers
 torch
-tqdm
+tqdmgunicorn>=23,<24
