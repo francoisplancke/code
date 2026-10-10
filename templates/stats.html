@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Statistiques des corpus</title><link rel="stylesheet" href="{{url_for('static',filename='app.css')}}"></head>
+<body>{% include '_corpus_nav.html' %}<main class="stats-container"><h1>Statistiques des corpus</h1><p class="r732-muted">Mesures calculées à partir de PostgreSQL, mises en cache 15 minutes par défaut. Les volumes d'articles, versions et dispositions ne sont pas interchangeables.</p>
+{% if stats %}
+{% for corpus, title in [('fr','France · LEGI'),('eu','Union européenne · EUR-Lex')] %}
+<section class="r732-card"><h2>{{title}}</h2>
+{% if stats[corpus].totals %}<div class="stats-kpis">{% for key,value in stats[corpus].totals.items() %}<div class="stats-kpi"><span>{{key|replace('_',' ')|capitalize}}</span><strong>{{'{:,}'.format(value)|replace(',',' ')}}</strong></div>{% endfor %}</div>{% else %}<p>Données indisponibles.</p>{% endif %}
+<div class="r732-grid">
+{% for key,label in ([('types','Types de textes'),('relations','Types de relations'),('etats','États des versions'),('codes','Codes : articles par code'),('models','Modèles d’embedding'),('imports','Dernier import')] if corpus=='fr' else [('types','Types d’actes'),('kinds','Types de dispositions')]) %}
+<div><h3>{{label}}</h3>{% if stats[corpus][key] is not none %}<div class="stats-table-wrap"><table class="stats-table"><thead><tr>{% if stats[corpus][key] %}{% for col in stats[corpus][key][0].keys() %}<th>{{col|replace('_',' ')}}</th>{% endfor %}{% endif %}</tr></thead><tbody>{% for item in stats[corpus][key] %}<tr>{% for val in item.values() %}<td>{{val if val is not none else '—'}}</td>{% endfor %}</tr>{% else %}<tr><td>Aucune donnée</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="r732-muted">Indisponible</p>{% endif %}</div>
+{% endfor %}</div></section>{% endfor %}
+{% if stats.errors %}<details><summary>Mesures indisponibles ({{stats.errors|length}})</summary><ul>{% for error in stats.errors %}<li>{{error}}</li>{% endfor %}</ul></details>{% endif %}
+{% else %}<p>Impossible de consulter les statistiques actuellement.</p>{% endif %}
+</main></body></html>
