@@ -97,6 +97,11 @@ searcher = LegiSearch(
 eu_searcher = EuPostgresSearch(searcher.conn)
 register_eu_routes(app, eu_searcher, searcher)
 
+@app.route('/a-propos')
+def about_page():
+    return render_template('about.html', active_corpus='about')
+
+
 @app.route('/stats')
 def stats_page():
     from legal.stats import collect
@@ -418,6 +423,9 @@ def inject_app_context():
         "app_eu_data_date": EU_DATA_DATE,
     }
 
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.ico")
 
 if __name__ == "__main__":
     # use_reloader=False évite de charger deux fois le modèle CUDA
