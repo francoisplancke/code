@@ -33,9 +33,11 @@ def extract_and_store(conn, *, jurisdiction: str, source_id: str, source_text: s
                 VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb)''',
                 (run_id, PIPELINE_VERSION,kind,provider,model,PROMPT_VERSION if mode != 'deterministic' else None,
                  json.dumps({'mode':mode,'source_jurisdiction':jurisdiction,'source_id':source_id})))
+            diagnostics = {'candidates': 0, 'rejected': 0, 'rejections': []}
+            llm_items = []
             items = deterministic(source_text) if mode in ('deterministic','hybrid') else []
             if mode in ('llm','hybrid'):
-                llm_items, _ = llm_extract(source_text, chat_fn)
+                llm_items, _ = llm_extract(source_text, chat_fn, diagnostics=diagnostics)
                 items += llm_items
             seen = set()
             count = 0
@@ -62,8 +64,15 @@ def extract_and_store(conn, *, jurisdiction: str, source_id: str, source_text: s
                                 'span_end':ob['span_end'],'extractor':item.extractor}]),
                    json.dumps(item.raw_output) if item.raw_output is not None else None))
                 count += 1
-            conn.execute("UPDATE legal_obligation_run SET status='SUCCEEDED', finished_at=now() WHERE run_id=%s", (run_id,))
-        return {'run_id':str(run_id),'obligations':count,'mode':mode,'source_checksum':checksum(source_text)}
+            run_status = 'FAILED' if diagnostics['candidates'] > 0 and not llm_items and mode == 'llm' else 'SUCCEEDED'
+            outcome = ('FAILED_VALIDATION' if run_status == 'FAILED' else
+                       'PARTIAL' if diagnostics['rejected'] else
+                       'EMPTY' if count == 0 else 'SUCCESS')
+            conn.execute("""UPDATE legal_obligation_run
+                SET status=%s, finished_at=now(), parameters=parameters || %s::jsonb
+                WHERE run_id=%s""", (run_status, json.dumps({'outcome': outcome, 'validation': diagnostics}), run_id))
+        return {'run_id':str(run_id),'obligations':count,'mode':mode,'source_checksum':checksum(source_text),
+                'outcome': outcome, 'candidates': diagnostics['candidates'], 'rejected': diagnostics['rejected']}
     except Exception:
         conn.rollback()
         raise

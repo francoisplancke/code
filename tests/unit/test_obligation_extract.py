@@ -23,8 +23,10 @@ def test_llm_strict_valid():
 def test_llm_hallucinated_excerpt_rejected():
     ob = deterministic(TEXT)[0].obligation
     ob['source_excerpt'] = 'Citation inventée'
-    with pytest.raises(ObligationValidationError):
-        llm_extract(TEXT, lambda messages, temperature: json.dumps({'obligations':[ob]}))
+    diagnostics = {}
+    items, _ = llm_extract(TEXT, lambda messages, temperature: json.dumps({'obligations':[ob]}), diagnostics=diagnostics)
+    assert items == []
+    assert diagnostics['rejected'] == 1
 
 def test_llm_invalid_envelope():
     with pytest.raises(ObligationValidationError):
@@ -36,3 +38,13 @@ def test_long_text_refused():
 
 def test_checksum_stable():
     assert checksum(TEXT) == checksum(TEXT)
+
+
+def test_llm_mixed_valid_invalid():
+    valid = deterministic(TEXT)[0].obligation
+    invalid = dict(valid, action=None)
+    diagnostics = {}
+    items, _ = llm_extract(TEXT, lambda messages, temperature: json.dumps({'obligations': [invalid, valid]}), diagnostics=diagnostics)
+    assert len(items) == 1
+    assert diagnostics['candidates'] == 2
+    assert diagnostics['rejected'] == 1

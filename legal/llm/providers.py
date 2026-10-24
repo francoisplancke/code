@@ -17,8 +17,8 @@ class LLMConfig:
     timeout: float = 60.0
 
 _DEFAULTS = {
-    "local": ("http://127.0.0.1:11434/v1", "local-model", "LEGAL_LLM_API_KEY"),
-    "remote": ("http://127.0.0.1:8000/v1", "local-model", "LEGAL_LLM_REMOTE_API_KEY"),
+    "local": ("http://127.0.0.1:8080/v1", "local-model", "LEGAL_LLM_API_KEY"),
+    "remote": ("http://127.0.0.1:8080/v1", "local-model", "LEGAL_LLM_REMOTE_API_KEY"),
     "openai": ("https://api.openai.com/v1", "gpt-5-mini", "OPENAI_API_KEY"),
     "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat", "DEEPSEEK_API_KEY"),
     "gemini": ("https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash", "GEMINI_API_KEY"),
@@ -63,7 +63,8 @@ def _chat_one(messages: list[dict[str,str]], c: LLMConfig, temperature: float) -
         system="\n".join(m["content"] for m in messages if m["role"]=="system")
         payload={"contents":contents,"generationConfig":{"temperature":temperature}}
         if system: payload["systemInstruction"]={"parts":[{"text":system}]}
-        data=_post(f"{c.base_url}/models/{c.model}:generateContent?key={c.api_key}",payload,{},c.timeout)
+        headers={"x-goog-api-key":c.api_key} if c.api_key else {}
+        data=_post(f"{c.base_url}/models/{c.model}:generateContent",payload,headers,c.timeout)
         try: return data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError,IndexError) as e: raise LLMError("réponse Gemini inattendue") from e
     headers={"Authorization":f"Bearer {c.api_key}"} if c.api_key else {}

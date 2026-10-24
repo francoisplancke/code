@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Callable
 from .schema import validate_obligation, ObligationValidationError
 
-PIPELINE_VERSION = 'r7.4.2-v1'
+PIPELINE_VERSION = 'r7.4.3.2-v1'
 PROMPT_VERSION = 'obligation-extraction-fr-v1'
 PATTERN = re.compile(r'\b(doit|doivent|est tenu(?:e)? de|sont tenus de|ne peut pas|ne peuvent pas|est interdit de|sont interdits de)\b', re.I)
 SENTENCE = re.compile(r'[^.!?\n]+(?:[.!?]|$)', re.U)
@@ -53,10 +53,65 @@ modalité: OBLIGATION, PROHIBITION, PERMISSION ou EXEMPTION.
 Les champs inconnus valent null, conditions/exceptions valent des listes.
 source_excerpt doit être une citation littérale exacte du texte source.
 span_start/span_end sont les positions Unicode [début, fin) dans le texte fourni.
-N'invente ni obligation, ni acteur, ni délai. Si aucune obligation, renvoie une liste vide.'''
+N'invente ni obligation, ni acteur, ni délai. Si aucune obligation, renvoie une liste vide.
+Une dépense ou un thème n'est pas à lui seul une obligation. action doit décrire un comportement explicite.
+N'utilise jamais une référence générique comme citation. Ne produis que des citations littérales continues.'''
 
 
-def llm_extract(text: str, chat_fn: Callable, *, max_chars: int = 12000) -> tuple[list[Extraction], str]:
+
+def resolve_citation(source_text: str, candidate: dict) -> tuple[dict, str]:
+    """Canonicalize a uniquely located literal citation, ignoring model offsets.
+
+    Return (candidate copy, anchoring method). Never invent evidence.
+    """
+    excerpt = candidate.get('source_excerpt')
+    if not isinstance(excerpt, str) or not excerpt.strip():
+        raise ObligationValidationError('source_excerpt must be a nonempty string')
+    start = source_text.find(excerpt)
+    if start >= 0:
+        if source_text.find(excerpt, start + 1) >= 0:
+            raise ObligationValidationError('ambiguous literal excerpt')
+        result = dict(candidate)
+        result['span_start'], result['span_end'] = start, start + len(excerpt)
+        return result, 'EXACT'
+
+    # Typographic normalization with an exact index map back to canonical source.
+    # Only normalize whitespace runs and common apostrophe variants; never
+    # remove or reorder substantive characters.
+    def normalize_with_map(value: str):
+        chars, starts, ends = [], [], []
+        i = 0
+        while i < len(value):
+            ch = value[i]
+            if ch.isspace() or ch == '\u00a0':
+                j = i + 1
+                while j < len(value) and value[j].isspace():
+                    j += 1
+                chars.append(' ')
+                starts.append(i)
+                ends.append(j)
+                i = j
+            else:
+                chars.append("'" if ch in ('\u2019', '\u2018', '\u02bc') else ch)
+                starts.append(i)
+                ends.append(i + 1)
+                i += 1
+        return ''.join(chars), starts, ends
+
+    normalized_source, starts, ends = normalize_with_map(source_text)
+    normalized_excerpt, _, _ = normalize_with_map(excerpt)
+    idx = normalized_source.find(normalized_excerpt)
+    if idx < 0:
+        raise ObligationValidationError('excerpt absent from source after typography normalization')
+    if normalized_source.find(normalized_excerpt, idx + 1) >= 0:
+        raise ObligationValidationError('ambiguous normalized excerpt')
+    begin, finish = starts[idx], ends[idx + len(normalized_excerpt) - 1]
+    result = dict(candidate)
+    result['source_excerpt'] = source_text[begin:finish]
+    result['span_start'], result['span_end'] = begin, finish
+    return result, 'TYPOGRAPHY'
+
+def llm_extract(text: str, chat_fn: Callable, *, max_chars: int = 12000, diagnostics: dict | None = None) -> tuple[list[Extraction], str]:
     if len(text) > max_chars:
         raise ValueError('source too long; segment before LLM extraction')
     response = chat_fn([{'role':'system','content':SYSTEM_PROMPT},
@@ -70,17 +125,19 @@ def llm_extract(text: str, chat_fn: Callable, *, max_chars: int = 12000) -> tupl
     if len(data['obligations']) > 100:
         raise ObligationValidationError('too many obligations')
     items = []
-    for item in data['obligations']:
-        print("OBLIGATION LLM BRUTE:", json.dumps(item, ensure_ascii=False, indent=2))
-        normalized = validate_obligation(item, source_text=text)
-        if normalized['span_start'] is None:
-            # Reject ambiguous offsets; exact citation must identify one location.
-            if text.count(normalized['source_excerpt']) != 1:
-                raise ObligationValidationError('ambiguous excerpt without offsets')
-            start = text.index(normalized['source_excerpt'])
-            normalized['span_start'] = start
-            normalized['span_end'] = start + len(normalized['source_excerpt'])
+    rejected = []
+    anchored = {'EXACT': 0, 'TYPOGRAPHY': 0}
+    for index, item in enumerate(data['obligations']):
+        try:
+            anchored_item, method = resolve_citation(text, item)
+            normalized = validate_obligation(anchored_item, source_text=text)
+            anchored[method] += 1
+        except ObligationValidationError as exc:
+            rejected.append({'index': index, 'reason': str(exc)})
+            continue
         items.append(Extraction(normalized, 'LLM', None, {'response': data}))
+    if diagnostics is not None:
+        diagnostics.update({'candidates': len(data['obligations']), 'rejected': len(rejected), 'rejections': rejected, 'anchored': anchored})
     return items, response
 
 
